@@ -38,6 +38,13 @@ fn handle_client(client: &mut TcpStream) -> Result<(), ()> {
 
     let _ = client.write(response.serialise().as_slice());
 
+    if let Some(value) = request.headers.get("Connection") {
+        if value == "close" {
+            // Client wants to close connection
+            return Err(())
+        }
+    }
+
     Ok(())
 }
 
