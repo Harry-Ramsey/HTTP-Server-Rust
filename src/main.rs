@@ -1,5 +1,6 @@
 use std::net::{TcpListener, TcpStream};
 use std::io::{Read, Write};
+use std::time::Duration;
 use std::thread;
 
 mod http_request;
@@ -25,7 +26,17 @@ fn router(request: &HTTPRequest) -> HTTPResponse {
 
 fn handle_client(client: &mut TcpStream) -> Result<(), ()> {
     let mut buffer: [u8; 4096] = [0; 4096];
-    let bytes_read = client.read(&mut buffer).unwrap();
+    let read = client.read(&mut buffer);
+    let bytes_read;
+    match read {
+        Ok(_bytes_read) => {
+            bytes_read = _bytes_read;
+        }
+        Err(_e) => {
+            // Close connection, timeout exceeded
+            return Err(())
+        }
+    }
 
     if bytes_read == 0 {
         // Connection was closed
@@ -54,6 +65,10 @@ fn main() {
     for stream in listener.incoming() {
         match stream {
             Ok(mut _stream) => {
+                println!("Accepted connection...");
+                let timeout = Duration::new(60, 0);
+                // Ignore the return since our duration is larger than 0
+                let error_ = _stream.set_read_timeout(Some(timeout));
                 thread::spawn(move || {
                     loop {
                         if let Err(_e) = handle_client(&mut _stream) {
