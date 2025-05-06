@@ -8,6 +8,22 @@ mod http_response;
 use crate::http_request::HTTPRequest;
 use crate::http_response::HTTPResponse;
 
+fn router(request: &HTTPRequest) -> HTTPResponse {
+    let response: HTTPResponse;
+    if request.target == "/" {
+        response = HTTPResponse::new_empty_body(200, "OK".to_string(), None);
+    } else if request.target.starts_with("/echo/") {
+        let content = request.target.strip_prefix("/echo/").unwrap();
+        response = HTTPResponse { status: 200, reason: "OK".to_string(), headers: None, body: Some(content.to_string()) };
+    } else if request.target == "/user-agent" {
+        let content = request.headers.get("User-Agent").unwrap();
+        response = HTTPResponse { status: 200, reason: "OK".to_string(), headers: None, body: Some(content.to_string()) };
+    } else {
+        response = HTTPResponse::new_empty_body(404, "Not Found".to_string(), None);
+    }
+    response
+}
+
 fn handle_client(client: &mut TcpStream) -> Result<(), ()> {
     let mut buffer: [u8; 4096] = [0; 4096];
     let bytes_read = client.read(&mut buffer).unwrap();
@@ -19,7 +35,7 @@ fn handle_client(client: &mut TcpStream) -> Result<(), ()> {
 
     println!("{}", bytes_read);
     let request = HTTPRequest::deserialise(&buffer[0..bytes_read]);
-    let response = HTTPResponse::new_empty_body(200, "OK".to_string(), None);
+    let response = router(&request);
 
     let _ = client.write(response.serialise().as_slice());
 
