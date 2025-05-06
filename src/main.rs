@@ -1,7 +1,6 @@
-use std::net::TcpListener;
-use std::net::TcpStream;
-use std::io::Read;
-use std::io::Write;
+use std::net::{TcpListener, TcpStream};
+use std::io::{Read, Write};
+use std::thread;
 
 mod http_request;
 mod http_response;
@@ -42,18 +41,19 @@ fn handle_client(client: &mut TcpStream) -> Result<(), ()> {
     Ok(())
 }
 
-#[tokio::main]
-async fn main() {
+fn main() {
     let listener = TcpListener::bind("127.0.0.1:4221").unwrap();
 
     for stream in listener.incoming() {
         match stream {
             Ok(mut _stream) => {
-                loop {
-                    if let Err(_e) = handle_client(&mut _stream) {
-                        break;
+                thread::spawn(move || {
+                    loop {
+                        if let Err(_e) = handle_client(&mut _stream) {
+                            break;
+                        }
                     }
-                }
+                });
             }
             Err(e) => {
                 println!("error: {}", e);
