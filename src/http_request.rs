@@ -1,8 +1,31 @@
 use std::collections::HashMap;
 
 pub enum HTTPMethod {
+    OPTIONS,
     GET,
-    POST
+    HEAD,
+    POST,
+    PUT,
+    DELETE,
+    TRACE,
+    CONNECT,
+    UNDEFINED,
+}
+
+impl HTTPMethod {
+    pub fn from_string(method: &str) -> HTTPMethod {
+        match method {
+            "OPTIONS" => HTTPMethod::OPTIONS,
+            "GET" => HTTPMethod::GET,
+            "HEAD" => HTTPMethod::HEAD,
+            "POST" => HTTPMethod::POST,
+            "PUT" => HTTPMethod::PUT,
+            "DELETE" => HTTPMethod::DELETE,
+            "TRACE" => HTTPMethod::TRACE,
+            "CONNECT" => HTTPMethod::CONNECT,
+            &_ => HTTPMethod::UNDEFINED,
+        }
+    }
 }
 
 pub struct HTTPRequest {
@@ -25,18 +48,7 @@ impl HTTPRequest {
         }
         println!("Request: {}", request_line);
         let mut splits = request_line.split(" ");
-        let method;
-        match splits.next().unwrap() {
-            "GET" => {
-                method = HTTPMethod::GET
-            }
-            "POST" => {
-                method = HTTPMethod::POST
-            }
-            _ => {
-                method = HTTPMethod::GET
-            }
-        }
+        let method = HTTPMethod::from_string(splits.next().unwrap());
         let target: String = splits.next().unwrap().to_string();
         println!("Target: {}", target);
 
