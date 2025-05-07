@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::net::{TcpListener, TcpStream};
 use std::io::{Read, Write};
 use std::time::Duration;
@@ -5,19 +6,30 @@ use std::thread;
 
 mod http_request;
 mod http_response;
+mod http_compression;
 use crate::http_request::HTTPRequest;
 use crate::http_response::HTTPResponse;
+use crate::http_compression::ContentEncoding;
 
 fn router(request: &HTTPRequest) -> HTTPResponse {
     let response: HTTPResponse;
+    let mut headers: HashMap<String, String> = HashMap::new();
+    if let Some(accepted_encodings) = request.headers.get("Accept-Encoding") {
+        let encoding = ContentEncoding::from_string(&accepted_encodings);
+        println!("Encoding:{:?}", encoding);
+        if encoding != ContentEncoding::IDENTITY {
+            headers.insert("Content-Encoding".to_string(), encoding.to_string());
+        }
+    }
+
     if request.target == "/" {
         response = HTTPResponse::new_empty_body(200, "OK".to_string(), None);
     } else if request.target.starts_with("/echo/") {
         let content = request.target.strip_prefix("/echo/").unwrap();
-        response = HTTPResponse { status: 200, reason: "OK".to_string(), headers: None, body: Some(content.to_string()) };
+        response = HTTPResponse { status: 200, reason: "OK".to_string(), headers: Some(headers), body: Some(content.to_string()) };
     } else if request.target == "/user-agent" {
         let content = request.headers.get("User-Agent").unwrap();
-        response = HTTPResponse { status: 200, reason: "OK".to_string(), headers: None, body: Some(content.to_string()) };
+        response = HTTPResponse { status: 200, reason: "OK".to_string(), headers: Some(headers), body: Some(content.to_string()) };
     } else {
         response = HTTPResponse::new_empty_body(404, "Not Found".to_string(), None);
     }
@@ -46,7 +58,6 @@ fn handle_client(client: &mut TcpStream) -> Result<(), ()> {
     println!("{}", bytes_read);
     let request = HTTPRequest::deserialise(&buffer[0..bytes_read]);
     let response = router(&request);
-
     let _ = client.write(response.serialise().as_slice());
 
     if let Some(value) = request.headers.get("Connection") {
