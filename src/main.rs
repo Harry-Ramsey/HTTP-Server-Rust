@@ -1,8 +1,8 @@
 use std::collections::HashMap;
-use std::net::{TcpListener, TcpStream};
-use std::io::{Read, Write};
 use std::time::Duration;
-use std::thread;
+use tokio::net::{TcpListener, TcpStream};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::time::timeout;
 
 mod http_request;
 mod http_response;
@@ -36,19 +36,24 @@ fn router(request: &HTTPRequest) -> HTTPResponse {
     response
 }
 
-fn handle_client(client: &mut TcpStream) -> Result<(), ()> {
+async fn handle_client(client: &mut TcpStream) -> Result<(), ()> {
     let mut buffer: [u8; 4096] = [0; 4096];
-    let read = client.read(&mut buffer);
+
     let bytes_read;
-    match read {
-        Ok(_bytes_read) => {
-            bytes_read = _bytes_read;
+    match timeout(Duration::from_secs(60), client.read(&mut buffer)).await {
+        Ok(Ok(n)) => {
+            bytes_read = n;
+        },
+        Ok(Err(e)) => {
+            eprintln!("Failed to read from socket error: {}", e);
+            return Err(());
         }
-        Err(_e) => {
-            // Close connection, timeout exceeded
-            return Err(())
-        }
+        Err(_) => {
+            println!("Client failed to respond within 60 seconds");
+            return Err(());
+        },
     }
+
 
     if bytes_read == 0 {
         // Connection was closed
@@ -58,7 +63,7 @@ fn handle_client(client: &mut TcpStream) -> Result<(), ()> {
     println!("{}", bytes_read);
     let request = HTTPRequest::deserialise(&buffer[0..bytes_read]);
     let response = router(&request);
-    let _ = client.write(response.serialise().as_slice());
+    let _ = client.write(response.serialise().as_slice()).await;
 
     if let Some(value) = request.headers.get("Connection") {
         if value == "close" {
@@ -70,27 +75,20 @@ fn handle_client(client: &mut TcpStream) -> Result<(), ()> {
     Ok(())
 }
 
-fn main() {
-    let listener = TcpListener::bind("127.0.0.1:4221").unwrap();
+#[tokio::main]
+async fn main() -> std::io::Result<()> {
+    let listener = TcpListener::bind("127.0.0.1:4221").await?;
 
-    for stream in listener.incoming() {
-        match stream {
-            Ok(mut _stream) => {
-                println!("Accepted connection...");
-                let timeout = Duration::new(60, 0);
-                // Ignore the return since our duration is larger than 0
-                let error_ = _stream.set_read_timeout(Some(timeout));
-                thread::spawn(move || {
-                    loop {
-                        if let Err(_e) = handle_client(&mut _stream) {
-                            break;
-                        }
-                    }
-                });
+    loop {
+        let (mut stream, _) = listener.accept().await?;
+        println!("Accepted connection...");
+        tokio::spawn(async move {
+            loop {
+                if let Err(_e) = handle_client(&mut stream).await {
+                    break;
+                }
             }
-            Err(e) => {
-                println!("error: {}", e);
-            }
-        }
+        });
     }
 }
+
