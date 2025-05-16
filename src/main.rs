@@ -1,8 +1,14 @@
 use std::collections::HashMap;
 use std::time::Duration;
+use std::sync::Arc;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::time::timeout;
+
+use rustls::pki_types::pem::{Error, PemObject};
+use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+use tokio_rustls::{rustls, TlsAcceptor};
+use tokio_rustls::server::TlsStream;
 
 mod http_request;
 mod http_response;
@@ -36,7 +42,7 @@ fn router(request: &HTTPRequest) -> HTTPResponse {
     response
 }
 
-async fn handle_client(client: &mut TcpStream) -> Result<(), ()> {
+async fn handle_client(client: &mut TlsStream<TcpStream>) -> Result<(), ()> {
     let mut buffer: [u8; 4096] = [0; 4096];
 
     let bytes_read;
@@ -49,7 +55,7 @@ async fn handle_client(client: &mut TcpStream) -> Result<(), ()> {
             return Err(());
         }
         Err(_) => {
-            println!("Client failed to respond within 60 seconds");
+            eprintln!("Client failed to respond within 60 seconds");
             return Err(());
         },
     }
@@ -75,16 +81,54 @@ async fn handle_client(client: &mut TcpStream) -> Result<(), ()> {
     Ok(())
 }
 
+fn setup_tls() -> Result<TlsAcceptor, Error> {
+    // Iterate through all certificates in a file
+    // unwrap them and collect them in a vector.
+    let certs = CertificateDer::pem_file_iter("./cert.pem")
+        .unwrap()
+        .map(|cert| cert.unwrap())
+        .collect();
+
+    let key = PrivateKeyDer::from_pem_file("./key.pem")?;
+
+    // Create Server TLS configuration with no client authenticationn
+    // and a single certificate.
+    let config: rustls::ServerConfig = rustls::ServerConfig::builder()
+        .with_no_client_auth()
+        .with_single_cert(certs, key).unwrap();
+
+    // Create acceptor which will do the serialise handshake
+    // using the above server configuration.
+    let acceptor = TlsAcceptor::from(Arc::new(config));
+    Ok(acceptor)
+}
+
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
     let listener = TcpListener::bind("127.0.0.1:4221").await?;
+    println!("Listening on 127.0.0.1:4221");
+    let acceptor;
+    match setup_tls() {
+        Ok(_acceptor) => {
+            acceptor = _acceptor;
+        }
+        Err(_e) => {
+            println!("Could not parse pem files");
+            return Err(std::io::Error::new(std::io::ErrorKind::Other, "TLS setup failed"));
+        }
+    }
 
     loop {
         let (mut stream, _) = listener.accept().await?;
+        let mut tls_stream = acceptor.accept(stream).await?;
         println!("Accepted connection...");
         tokio::spawn(async move {
             loop {
-                if let Err(_e) = handle_client(&mut stream).await {
+                if let Err(_e) = handle_client(&mut tls_stream).await {
+                    // Ignore return value since the connection
+                    // has closed unexpectedly (client side) or
+                    // is being closed (server side).
+                    let _ = tls_stream.shutdown().await;
                     break;
                 }
             }
