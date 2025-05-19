@@ -11,7 +11,17 @@ pub struct HTTPResponse {
 
 impl HTTPResponse  {
     pub fn new_empty_body(status: u16, reason: String, headers: Option<HashMap<String, String>>) -> HTTPResponse {
-        HTTPResponse { status: status, reason: reason, headers: headers, body: None}
+        match headers {
+            Some(mut _headers) => {
+                _headers.insert("Content-Length".to_string(), "0".to_string());
+                HTTPResponse { status: status, reason: reason, headers: Some(_headers), body: None}
+            }
+            None => {
+                let mut _headers: HashMap<String, String> = HashMap::new();
+                _headers.insert("Content-Length".to_string(), "0".to_string());
+                HTTPResponse { status: status, reason: reason, headers: Some(_headers), body: None}
+            }
+        }
     }
 
     pub fn serialise(self) -> Vec<u8> {
