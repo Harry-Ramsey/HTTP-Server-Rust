@@ -120,7 +120,15 @@ async fn main() -> std::io::Result<()> {
 
     loop {
         let (mut stream, _) = listener.accept().await?;
-        let mut tls_stream = acceptor.accept(stream).await?;
+
+        let mut tls_stream = match acceptor.accept(stream).await {
+            Ok(tls) => tls,
+            Err(e) => {
+                eprintln!("TLS handshake failed: {}", e);
+                continue;
+            }
+        };
+
         println!("Accepted connection...");
         tokio::spawn(async move {
             loop {
